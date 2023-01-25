@@ -1,0 +1,9 @@
+outputs
+results
+data
+images
+.vscode
+.idea
+*.log
+*.pyc
+*.jpg
