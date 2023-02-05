@@ -2,8 +2,11 @@ outputs
 results
 data
 images
+plots
 .vscode
 .idea
 *.log
 *.pyc
 *.jpg
+*.ipynb
+*.txt

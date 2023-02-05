@@ -146,58 +146,6 @@ class LSTMAssessor(nn.Module):
         output = torch.mean(output ,axis=0)
         return output
 
-class assessor_cnn(nn.Module):
-    """Assessor module for CLAMP."""
-
-    def __init__(self, h_dim=1024, resnet_34=False, resnet_50=False):
-        """Init assessor."""
-        super(assessor_cnn, self).__init__()
-        from models.resnet import resnet34, resnet50
-        if resnet_34:
-            self.encoder = resnet34(pretrained=True)
-        elif resnet_50:
-            self.encoder = resnet50(pretrained=True)
-        self.fc = nn.Linear(self.encoder.fc.out_features, h_dim)
-        self.relu = nn.ReLU()
-        # nn.init.xavier_uniform_(self.fc1.weight)
-        # self.fc1.bias.data.zero_()
-        # nn.init.xavier_uniform_(self.fc2.weight)
-        # self.fc2.bias.data.zero_()
-
-        self.lstm= nn.LSTM(input_size=h_dim ,hidden_size=128 ,num_layers=2 ,batch_first=True)
-        self.fc1 = nn.Linear(in_features=128 ,out_features=128)
-        self.fc2 = nn.Linear(in_features=128 ,out_features=3)
-        self.init_param()
-        # nn.init.xavier_uniform_(self.lstm.weight)
-        # self.lstm.bias.data.zero_()
-        # nn.init.xavier_uniform_(self.fc3.weight)
-        # self.fc3.bias.data.zero_()
-        # nn.init.xavier_uniform_(self.fc4.weight)
-        # self.fc4.bias.data.zero_()
-
-
-    def init_param(self):
-        for name, param in self.named_parameters():
-            torch.nn.init.normal_(param);
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.fc(x)
-
-        x = x.view(x.shape[0], 1, x.shape[1])
-
-        h0 = torch.zeros(2, x.shape[0], 128).to(self.device)
-        c0 = torch.zeros(2, x.shape[0], 128).to(self.device)
-
-        out ,_ = self.lstm(x ,(h0 ,c0))
-        out = out[: ,-1 ,:]
-        out = self.fc1(out)
-        out = self.fc2(out)
-        output = torch.sigmoid(out)
-        # output = np.mean(output.cpu().detach().numpy() ,axis=0)
-        output = torch.mean(output ,axis=0)
-        return output
-
 class cnnlstm(nn.Module):
     def __init__(self, backbone, bottleneck, pool, embed_dim, hidden_size, num_layers, num_classes):
         super(cnnlstm, self).__init__()
@@ -283,16 +231,20 @@ class ClassifierBase(nn.Module):
             self.bottleneck = bottleneck
             assert bottleneck_dim > 0
             self._features_dim = bottleneck_dim
+            self.bottleneck.apply(init_weights)
 
         if head is None:
-            self.head = nn.Linear(self._features_dim, num_classes)
-            nn.init.normal_(self.head.weight)
-            nn.init.constant_(self.head.bias, 0)
+            self.head = nn.Sequential(
+            nn.Linear(self._features_dim, self._features_dim),
+            nn.ReLU(),
+            # nn.Dropout2d(),
+            nn.Linear(self._features_dim, num_classes)
+        )
+
+            self.head.apply(init_weights)
         else:
             self.head = head
         self.finetune = finetune
-	    
-        # self.apply(self._init_weights_xavier)
 
     @property
     def features_dim(self) -> int:
@@ -660,12 +612,134 @@ class ImageClassifier(ClassifierBase):
             # nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             # nn.Flatten(),
             nn.Linear(backbone.out_features, bottleneck_dim),
-            # nn.BatchNorm1d(bottleneck_dim),
+            nn.BatchNorm1d(bottleneck_dim),
             nn.ReLU()
         )
         super(ImageClassifier, self).__init__(backbone, num_classes, bottleneck, bottleneck_dim, **kwargs)
 
 
+# class CLAMP(nn.Module):
+#     def __init__(self, dataset_name: str, network_name: str, num_classes: int, bottleneck_dim: Optional[int] = 256,
+#                 scratch: bool = True, no_pool: bool = False, pretrained=False):
+#         super(CLAMP, self).__init__()
+#         # backbone
+#         backbone = get_model(network_name, pretrain=pretrained)
+#         pool_layer = nn.Identity() if no_pool else None
+#         self.classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=bottleneck_dim,
+#                                         pool_layer=pool_layer, finetune=not scratch)
+#         domain_discri = DomainDiscriminator(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim)
+#         self.domain_adv = DomainAdversarialLoss(domain_discri)
+        
+#         # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
+#         #     self.assessorS = assessor(h_dim=self.classifier.features_dim)
+#         #     self.assessorT = assessor(h_dim=self.classifier.features_dim)
+#         # else:
+#         #     self.assessorS = LSTMAssessor(3)
+#         #     self.assessorT = LSTMAssessor(3)
+
+#         # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
+#         #     lstm_nodes = 64
+#         # else:
+#         #     lstm_nodes = 128
+#         # import copy
+#         # self.assessorS = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
+#         #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
+#         #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
+#         # self.assessorT = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
+#         #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
+#         #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
+
+#         if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
+#             self.assessorS = assessor(h_dim=self.classifier.features_dim)
+#             self.assessorT = assessor(h_dim=self.classifier.features_dim)
+#         else:
+#             lstm_nodes = 128
+#             import copy
+#             self.assessorS = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
+#                                     pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
+#                                     hidden_size=lstm_nodes,num_layers=2,num_classes=3)
+#             self.assessorT = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
+#                                     pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
+#                                     hidden_size=lstm_nodes,num_layers=2,num_classes=3)
+
+#             # lstm_nodes = 128
+#             # backbone = get_model(network_name, pretrain=pretrained)
+#             # pool_layer = nn.Identity() if no_pool else None
+#             # backbone = FeatrueExtrator(backbone, bottleneck_dim, pool_layer)
+#             # self.assessorS = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
+#             #                         hidden_size=lstm_nodes, num_layers=2, num_classes=3)
+#             # self.assessorT = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
+#             #                         hidden_size=lstm_nodes, num_layers=2, num_classes=3)
+
+#     def get_base_parameters(self) -> List[Dict]:
+#         param = self.classifier.get_parameters() + self.domain_adv.domain_discriminator.get_parameters()
+#         return param
+
+#     def get_copy(self):
+#         """Get weights from the model"""
+#         return deepcopy(self.state_dict())
+
+#     def set_state_dict(self, state_dict):
+#         """Load weights into the model"""
+#         self.load_state_dict(deepcopy(state_dict))
+#         return
+        
+from utils import ReverseLayerF
+
+class DomainClassifier(nn.Module):
+    r"""Domain discriminator model from
+    `Domain-Adversarial Training of Neural Networks (ICML 2015) <https://arxiv.org/abs/1505.07818>`_
+    Distinguish whether the input features come from the source domain or the target domain.
+    The source domain label is 1 and the target domain label is 0.
+    Args:
+        in_feature (int): dimension of the input feature
+        hidden_size (int): dimension of the hidden features
+        batch_norm (bool): whether use :class:`~torch.nn.BatchNorm1d`.
+            Use :class:`~torch.nn.Dropout` if ``batch_norm`` is False. Default: True.
+    Shape:
+        - Inputs: (minibatch, `in_feature`)
+        - Outputs: :math:`(minibatch, 1)`
+    """
+
+    def __init__(self, in_feature: int, hidden_size: int, batch_norm=True, sigmoid=True):
+        super(DomainClassifier, self).__init__()
+        if sigmoid:
+            final_layer = nn.Sequential(
+                nn.Linear(hidden_size, 1),
+                nn.Sigmoid()
+            )
+        else:
+            final_layer = nn.Linear(hidden_size, 2)
+        if batch_norm:
+            self.net = nn.Sequential(
+                nn.Linear(in_feature, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                final_layer
+            )
+        else:
+            self.net = nn.Sequential(
+                nn.Linear(in_feature, hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.5),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.5),
+                final_layer
+            )
+
+    def get_parameters(self) -> List[Dict]:
+        return [{"params": self.parameters(), "lr": 1.}]
+
+    def forward(self, x, alpha):
+        y = ReverseLayerF.apply(x, alpha)
+        y = self.net(y)
+        y=y.view(y.shape[0],-1)
+        return y
+        
 class CLAMP(nn.Module):
     def __init__(self, dataset_name: str, network_name: str, num_classes: int, bottleneck_dim: Optional[int] = 256,
                 scratch: bool = True, no_pool: bool = False, pretrained=False):
@@ -675,135 +749,7 @@ class CLAMP(nn.Module):
         pool_layer = nn.Identity() if no_pool else None
         self.classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=bottleneck_dim,
                                         pool_layer=pool_layer, finetune=not scratch)
-        domain_discri = DomainDiscriminator(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim)
-        self.domain_adv = DomainAdversarialLoss(domain_discri)
-        
-        # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-        #     self.assessorS = assessor(h_dim=self.classifier.features_dim)
-        #     self.assessorT = assessor(h_dim=self.classifier.features_dim)
-        # else:
-        #     self.assessorS = LSTMAssessor(3)
-        #     self.assessorT = LSTMAssessor(3)
-
-        # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-        #     lstm_nodes = 64
-        # else:
-        #     lstm_nodes = 128
-        # import copy
-        # self.assessorS = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-        #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-        #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-        # self.assessorT = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-        #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-        #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-
-        if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-            self.assessorS = assessor(h_dim=self.classifier.features_dim)
-            self.assessorT = assessor(h_dim=self.classifier.features_dim)
-        else:
-            lstm_nodes = 128
-            import copy
-            self.assessorS = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-                                    pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-                                    hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-            self.assessorT = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-                                    pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-                                    hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-
-            # lstm_nodes = 128
-            # backbone = get_model(network_name, pretrain=pretrained)
-            # pool_layer = nn.Identity() if no_pool else None
-            # backbone = FeatrueExtrator(backbone, bottleneck_dim, pool_layer)
-            # self.assessorS = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
-            #                         hidden_size=lstm_nodes, num_layers=2, num_classes=3)
-            # self.assessorT = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
-            #                         hidden_size=lstm_nodes, num_layers=2, num_classes=3)
-
-    def get_base_parameters(self) -> List[Dict]:
-        param = self.classifier.get_parameters() + self.domain_adv.domain_discriminator.get_parameters()
-        return param
-
-    def get_copy(self):
-        """Get weights from the model"""
-        return deepcopy(self.state_dict())
-
-    def set_state_dict(self, state_dict):
-        """Load weights into the model"""
-        self.load_state_dict(deepcopy(state_dict))
-        return
-
-
-class CLAMP_new(nn.Module):
-    def __init__(self, dataset_name: str, network_name: str, num_classes: int, bottleneck_dim: Optional[int] = 256,
-                scratch: bool = True, no_pool: bool = False, pretrained=False):
-        super(CLAMP_new, self).__init__()
-        # backbone
-        backbone = get_model(network_name, pretrain=pretrained)
-        pool_layer = nn.Identity() if no_pool else None
-        self.classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=bottleneck_dim,
-                                        pool_layer=pool_layer, finetune=not scratch)
-        domain_discri = DomainDiscriminator(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim)
-        self.domain_adv = DomainAdversarialLoss(domain_discri)
-        
-        # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-        #     self.assessorS = assessor(h_dim=self.classifier.features_dim)
-        #     self.assessorT = assessor(h_dim=self.classifier.features_dim)
-        # else:
-        #     self.assessorS = LSTMAssessor(3)
-        #     self.assessorT = LSTMAssessor(3)
-
-        # if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-        #     lstm_nodes = 64
-        # else:
-        #     lstm_nodes = 128
-        # import copy
-        # self.assessorS = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-        #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-        #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-        # self.assessorT = cnnlstm(backbone=copy.deepcopy(backbone),bottleneck=copy.deepcopy(self.classifier.bottleneck),
-        #                          pool=copy.deepcopy(self.classifier.pool_layer), embed_dim=bottleneck_dim,
-        #                          hidden_size=lstm_nodes,num_layers=2,num_classes=3)
-
-        if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
-            self.assessorS = assessor(h_dim=self.classifier.features_dim)
-            self.assessorT = assessor(h_dim=self.classifier.features_dim)
-        else:
-            # lstm_nodes = 256
-            lstm_nodes = 128
-            # lstm_nodes = 64
-            backbone = get_model(network_name, pretrain=pretrained)
-            pool_layer = nn.Identity() if no_pool else None
-            backbone = FeatrueExtrator(backbone, bottleneck_dim, pool_layer)
-            self.assessorS = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
-                                    hidden_size=lstm_nodes, num_layers=2, num_classes=3)
-            self.assessorT = assessor_cnn(backbone=backbone, embed_dim=bottleneck_dim,
-                                    hidden_size=lstm_nodes, num_layers=2, num_classes=3)
-
-    def get_base_parameters(self) -> List[Dict]:
-        param = self.classifier.get_parameters() + self.domain_adv.domain_discriminator.get_parameters()
-        return param
-
-    def get_copy(self):
-        """Get weights from the model"""
-        return deepcopy(self.state_dict())
-
-    def set_state_dict(self, state_dict):
-        """Load weights into the model"""
-        self.load_state_dict(deepcopy(state_dict))
-        return
-
-        
-class CLAMP_resnet18(nn.Module):
-    def __init__(self, dataset_name: str, network_name: str, num_classes: int, bottleneck_dim: Optional[int] = 256,
-                scratch: bool = True, no_pool: bool = False, pretrained=False):
-        super(CLAMP_resnet18, self).__init__()
-        # backbone
-        backbone = get_model(network_name, pretrain=pretrained)
-        pool_layer = nn.Identity() if no_pool else None
-        self.classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=bottleneck_dim,
-                                        pool_layer=pool_layer, finetune=not scratch)
-        domain_discri = DomainDiscriminator(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim)
-        self.domain_adv = DomainAdversarialLoss(domain_discri)
+        self.domain_adv = DomainClassifier(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim, batch_norm=False, sigmoid=False)
         
         if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
             self.assessorS = assessor(h_dim=self.classifier.features_dim)
@@ -821,7 +767,7 @@ class CLAMP_resnet18(nn.Module):
                                     hidden_size=lstm_nodes, num_layers=2, num_classes=3)
 
     def get_base_parameters(self) -> List[Dict]:
-        param = self.classifier.get_parameters() + self.domain_adv.domain_discriminator.get_parameters()
+        param = self.classifier.get_parameters() + self.domain_adv.get_parameters()
         return param
 
     def get_copy(self):

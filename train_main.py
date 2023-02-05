@@ -183,7 +183,6 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
                 scratch=args.scratch, no_pool=args.no_pool, \
                 pretrained=args.pretrained
                 )
-        # print(net)
         seed_everything(seed=args.seed+iRound)
         appr_kwargs = {**base_kwargs, **dict(logger=logger, **appr_args.__dict__)}
         if Appr_ExemplarsDataset:
@@ -293,13 +292,13 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
             feature_extractor = deepcopy(net.model).to(args.device)
             m_type = 2
         tsne_dir    = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.p_dir[2:])
-        tsne_file   = os.path.join(tsne_dir,  'tSNE {} {}2{} {} init.png'.format((args.approach).upper(), s, t, args.network))
+        tsne_file   = os.path.join(tsne_dir,  param_stamp + 'tSNE {} {}2{} {} init.png'.format((args.approach).upper(), s, t, args.network))
         
-        if not os.path.exists(tsne_file):
-            from utils import visualize
-            visualize(src_te,tgt_te,feature_extractor,args.tasks,
-                        filename=tsne_file, colors=colors,
-                        batch_size=args.batch,device=args.device, m_type=m_type)
+        # if not os.path.exists(tsne_file):
+        from utils import visualize
+        visualize(src_te,tgt_te,feature_extractor,args.tasks,
+                    filename=tsne_file, colors=colors,
+                    batch_size=args.batch,device=args.device, m_type=m_type)
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -395,7 +394,8 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
         appr.source = args.source
         net.to(args.device)
         if args.approach=='clamp':
-            torch.nn.DataParallel(net, device_ids=[3, 0, 2])
+            # torch.nn.DataParallel(net, device_ids=[0,1,2,3])
+            appr.analysis = args.analysis
         print(active_classes)
 
         # GridSearch
@@ -428,7 +428,7 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
         if issubclass(Appr, Inc_Learning_Appr):
             appr.train(task, src_tr[task], tgt_te[task])
         elif issubclass(Appr, Continous_DA_Appr) or issubclass(Appr, dom_adapt_Appr):
-            appr.train(task, src_tr[task], src_te[task], tgt_tr[task], tgt_te[task])
+            appr.train(task, src_tr[task], src_te, tgt_tr[task], tgt_te)
         print('-' * 108)
         # Test
         for u in range(task + 1):
@@ -482,13 +482,17 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
                 feature_extractor = deepcopy(net.model).to(args.device)
                 m_type = 2
             tsne_dir    = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.p_dir[2:])
-            tsne_file   = os.path.join(tsne_dir, 'tSNE {} {}2{} {} at Task {}.png'.format((args.approach).upper(), s, t, args.network, task))
+            tsne_file   = os.path.join(tsne_dir, param_stamp + 'tSNE {} {}2{} {} at Task {}.png'.format((args.approach).upper(), s, t, args.network, task))
             
-            if not os.path.exists(tsne_file):
-                from utils import visualize
-                visualize(src_te[:(task+1)],tgt_te[:(task+1)],feature_extractor, (task+1),
-                            filename=tsne_file, colors=colors[:(task+1)],
-                            batch_size=args.batch,device=args.device, m_type=m_type)
+            # if not os.path.exists(tsne_file):
+            from utils import visualize
+            visualize(src_te[:(task+1)],tgt_te[:(task+1)],feature_extractor, (task+1),
+                        filename=tsne_file, colors=colors[:(task+1)],
+                        batch_size=args.batch,device=args.device, m_type=m_type)
+
+            m_dir = os.path.join(os.path.join(os.path.join(args.r_dir,TypeAblation), TypeAblation + '_' + args.approach),'models')
+            m_file = os.path.join(m_dir, param_stamp + ' Task {}.pt'.format(task))
+            torch.save(feature_extractor.to('cpu'), m_file)
 
         # Save
         print('Save at ' + os.path.join(r_dir, full_exp_name))
@@ -525,6 +529,24 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
     # time_file.close()
 
     print("#"*108)
+    if args.analysis:
+        from utils import plot_acc
+        figname = os.path.join(args.p_dir, param_stamp+'-acc_class plot.jpg')
+        plot_acc(appr.acc_task1, args, figname, 'Accuracy')
+        figname = os.path.join(args.p_dir, param_stamp+'-acc_domain plot.jpg')
+        plot_acc(appr.acc_task1_, args, figname, 'Accuracy')
+        figname = os.path.join(args.p_dir, param_stamp+'-ave query acc_class plot.jpg')
+        plot_acc(appr.ave_acc, args, figname, 'Average Accuracy')
+        figname = os.path.join(args.p_dir, param_stamp+'-ave query acc_domain plot.jpg')
+        plot_acc(appr.ave_acc_, args, figname, 'Average Accuracy')
+        with open("{}/acc_CIL-{}.pkl".format(r_dir, param_stamp+'.pkl'), 'wb') as f:
+            pickle.dump(appr.acc_task1, f)
+        with open("{}/acc_DIL-{}.pkl".format(r_dir, param_stamp+'.pkl'), 'wb') as f:
+            pickle.dump(appr.acc_task1_, f)
+        with open("{}/ave acc_CIL-{}.pkl".format(r_dir, param_stamp+'.pkl'), 'wb') as f:
+            pickle.dump(appr.ave_acc, f)
+        with open("{}/ave acc_DIL-{}.pkl".format(r_dir, param_stamp+'.pkl'), 'wb') as f:
+            pickle.dump(appr.ave_acc_, f)
 
     #-------------------------------------------------------------------------------------------------#
 

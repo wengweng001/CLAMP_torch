@@ -20,6 +20,7 @@ import os
 from imblearn.under_sampling import RandomUnderSampler
 from torchvision import transforms
 import torch.nn.functional as F
+import evaluate
 
 from datasets.memory_dataset import MemoryDataset
 from torch.utils.data import TensorDataset
@@ -49,6 +50,12 @@ class Appr(Continous_DA_Appr):
         # function switch
         self.der                = True
         self.distill            = True
+
+        self.acc_task1          = []
+        self.acc_task1_         = []
+        self.ave_acc            = []
+        self.ave_acc_           = []
+        self.analysis           = False
         
     @staticmethod
     def exemplars_dataset_class():
@@ -66,10 +73,11 @@ class Appr(Continous_DA_Appr):
         finetune = False
         params = [
             {"params": self.model.classifier.backbone.parameters(), "lr": 0.1 * self.lr1 if finetune else 1.0 * self.lr1},
+            {"params": self.model.classifier.pool_layer.parameters(), "lr": 1.0 * self.lr1},
             {"params": self.model.classifier.bottleneck.parameters(), "lr": 1.0 * self.lr1},
             {"params": self.model.classifier.head.parameters(), "lr": 1.0 * self.lr1},
-            {"params": self.model.domain_adv.domain_discriminator.parameters(), "lr":  1.0 * self.lr1}]
-            
+            {"params": self.model.domain_adv.parameters(), "lr":  1.0 * self.lr1}]
+
         params_s = list(self.model.assessorS.parameters())
         params_t = list(self.model.assessorT.parameters())
         
@@ -180,8 +188,10 @@ class Appr(Continous_DA_Appr):
             for image, target in dataloader:
 
                 _, features = self.model.classifier(image.to(self.device))
-                domain_output = self.model.domain_adv.domain_discriminator(features)
-                diff = torch.abs(domain_output-0.5)
+                # domain_output = self.model.domain_adv.domain_discriminator(features)
+                # diff = torch.abs(domain_output-0.5)
+                domain_output = self.model.domain_adv(features, alpha=0.5)
+                diff = torch.abs(F.softmax(domain_output)[:,0]-F.softmax(domain_output)[:,1])
                 
                 [diff_buffer.append(i.item()) for i in diff]
                 sample_buffer.append(image)
@@ -442,6 +452,7 @@ class Appr(Continous_DA_Appr):
     def train_epoch(self, t, e, trn_src_loader, val_src, trn_tgt, val_tgt):
         'iterations'
         trn_src = deepcopy(trn_src_loader)
+        discriminator_criterion = torch.nn.CrossEntropyLoss()
         # switch to train mode
         self.model.classifier.train()
         self.model.domain_adv.train()
@@ -537,6 +548,11 @@ class Appr(Continous_DA_Appr):
         # print("Source dataloader batch no. {} \t Target dataloader batch no. {}\n\tIterations per epoch is {}"
         #         .format(len(trn_src_loader),len(trn_tgt_loader),iters_per_epoch))
 
+        if self.analysis:
+            acc = []
+            acc_ = []
+            mean_acc = []
+            mean_acc_ = []
         for i in range(iters_per_epoch):
             
             self.iter_counts += 1
@@ -563,9 +579,10 @@ class Appr(Continous_DA_Appr):
                             # print(c_lr_s)
             
             # compute output
-            x = torch.cat((x_s, x_t), dim=0)
-            y, f = self.model.classifier(x.to(self.device))
-            y_s, _ = y.chunk(2, dim=0)
+            # x = torch.cat((x_s, x_t), dim=0)
+            # y, f = self.model.classifier(x.to(self.device))
+            # y_s, _ = y.chunk(2, dim=0)
+            y_s, f_s = self.model.classifier(x_s.to(self.device))
             # -if needed, remove predictions for classes not in current task
             if self.active_classes is not None:
                 class_entries = self.active_classes[-1] if type(self.active_classes[0])==list else self.active_classes
@@ -589,12 +606,24 @@ class Appr(Continous_DA_Appr):
 
             self.logger.log_scalar(task=t, iter=i + 1, name="loss src", value=loss.item(), group="train-epoch")
             
-            if (phase == 'domain invariant') and self.domain_invariant:
-                f_s, f_t = f.chunk(2, dim=0)
-                transfer_loss = self.model.domain_adv(f_s, f_t)
-                loss = loss + transfer_loss * self.trade_off
+            if (phase == 'domain invariant') and self.domain_invariant:                
+                p = float(i + e * iters_per_epoch) / self.warmup_epochs / iters_per_epoch
+                alpha = 2. / (1. + np.exp(-10 * p)) - 1
+                domain_label = torch.zeros(len(x_s))
+                domain_label = domain_label.long()
+                output_domain_s = self.model.domain_adv(f_s, alpha)
+                transfer_loss_s = discriminator_criterion(output_domain_s, domain_label.to(self.device))
                 
-                self.logger.log_scalar(task=t, iter=i + 1, name="loss da", value=(transfer_loss * self.trade_off).item(), group="train-epoch")
+                domain_label = torch.ones(len(x_t))
+                domain_label = domain_label.long()
+                _, f_t = self.model.classifier(x_t.to(self.device))
+                output_domain_t = self.model.domain_adv(f_t, alpha)
+                transfer_loss_t = discriminator_criterion(output_domain_t, domain_label.to(self.device))
+
+                loss = loss + (transfer_loss_s + transfer_loss_t) * self.trade_off
+                
+                self.logger.log_scalar(task=t, iter=i + 1, name="domain loss source", value=(transfer_loss_s * self.trade_off).item(), group="train-epoch")
+                self.logger.log_scalar(task=t, iter=i + 1, name="domain loss target", value=(transfer_loss_t * self.trade_off).item(), group="train-epoch")
             
             if (phase == 'adaptive assessment') and self.pseudo:
                 x_p, labels_p = next(pseudo_loader)
@@ -651,6 +680,32 @@ class Appr(Continous_DA_Appr):
             
             self.logger.log_scalar(task=t, iter=i + 1, name="loss", value=loss.item(), group="train-epoch")
             # print('general loss:',loss.item())
+            
+            if self.analysis:
+                acc_task1 = evaluate.validate_one_task(
+                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[0]), verbose=False, test_size=None,
+                    allowed_classes=self.active_classes[-1] if type(self.active_classes[0])==list else self.active_classes
+                    )
+                acc_task1_ = evaluate.validate_one_task(
+                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[0]), verbose=False, test_size=None,
+                    )
+                acc.append(acc_task1.item())
+                acc_.append(acc_task1_.item())
+                a = evaluate.validate(
+                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[:t+1]), n_task=t+1, verbose=False, test_size=None,
+                    allowed_classes_list=[list(range(self.classes_per_task*(i+1))) for i in range(t+1)]  if isinstance(self.classes_per_task,int) \
+                        else [list(range(sum(self.classes_per_task[:i+1]))) for i in range(len(t+1))] )
+                b = evaluate.validate(
+                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[:t+1]), n_task=t+1, verbose=False, test_size=None,
+                    )
+                mean_acc.append(np.mean(a))
+                mean_acc_.append(np.mean(b))
+        
+        if self.analysis:
+            self.acc_task1.append(acc)
+            self.acc_task1_.append(acc_)
+            self.ave_acc.append(mean_acc)
+            self.ave_acc_.append(mean_acc)
 
     def train_one_step_assessor(self, t, x, y, x_mem: None, y_mem: None, assessor, assessorOptimizer):
         # torch.cuda.empty_cache()
@@ -684,7 +739,7 @@ class Appr(Continous_DA_Appr):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(assessor.parameters(), self.clipgrad)
         assessorOptimizer.step()
-        # print('assessor loss:',loss.item())
+        # print('Asse:', loss.item(),end=' ')
 
         assessor.eval()
         torch.cuda.empty_cache()
