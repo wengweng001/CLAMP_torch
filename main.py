@@ -15,7 +15,6 @@ warnings.filterwarnings("ignore")
 
 wandb=None
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 def main(parser, args):

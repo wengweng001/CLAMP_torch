@@ -183,7 +183,6 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
                 scratch=args.scratch, no_pool=args.no_pool, \
                 pretrained=args.pretrained
                 )
-        # print(net)
         seed_everything(seed=args.seed+iRound)
         appr_kwargs = {**base_kwargs, **dict(logger=logger, **appr_args.__dict__)}
         if Appr_ExemplarsDataset:
@@ -271,35 +270,6 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
         appr_ft = Appr_finetuning(net, args.device, **ft_kwargs)
         gridsearch = GridSearch(appr_ft, args.seed, gs_args.gridsearch_config, gs_args.gridsearch_acc_drop_thr,
                                 gs_args.gridsearch_hparam_decay, gs_args.gridsearch_max_num_searches)
-
-    #-------------------------------------------------------------------------------------------------#
-
-    #---------------------#
-    #----- visualize -----#
-    #---------------------#
-
-    if args.analysis:
-        # t-SNE plots before alignment
-        from copy import deepcopy
-        # colors = ["#ffffcc", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"]
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-        if issubclass(Appr,Continous_DA_Appr):
-            feature_extractor = deepcopy(net.classifier).to(args.device)
-            m_type = 1
-        elif issubclass(Appr, dom_adapt_Appr):
-            feature_extractor = deepcopy(net.encoder).to(args.device)
-            m_type = 2
-        elif issubclass(Appr, Inc_Learning_Appr):
-            feature_extractor = deepcopy(net.model).to(args.device)
-            m_type = 2
-        tsne_dir    = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.p_dir[2:])
-        tsne_file   = os.path.join(tsne_dir,  'tSNE {} {}2{} {} init.png'.format((args.approach).upper(), s, t, args.network))
-        
-        if not os.path.exists(tsne_file):
-            from utils import visualize
-            visualize(src_te,tgt_te,feature_extractor,args.tasks,
-                        filename=tsne_file, colors=colors,
-                        batch_size=args.batch,device=args.device, m_type=m_type)
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -394,8 +364,8 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
         appr.classes_per_task = classes_per_task[task] if isinstance(classes_per_task,list) else classes_per_task
         appr.source = args.source
         net.to(args.device)
-        if args.approach=='clamp':
-            torch.nn.DataParallel(net, device_ids=[3, 0, 2])
+        # if args.approach=='clamp':
+        #     torch.nn.DataParallel(net, device_ids=[0,1,2,3])
         print(active_classes)
 
         # GridSearch
@@ -470,25 +440,6 @@ def run(s, t, parser, args, iRound, param_stamp,verbose=False):
             ) 
             sminusiiPrecVec.append(tmpsminusii)
 
-        if args.analysis:
-            # t-SNE plots
-            if issubclass(Appr,Continous_DA_Appr):
-                feature_extractor = deepcopy(net.classifier).to(args.device)
-                m_type = 1
-            elif issubclass(Appr, dom_adapt_Appr):
-                feature_extractor = deepcopy(net.encoder).to(args.device)
-                m_type = 2
-            elif issubclass(Appr, Inc_Learning_Appr):
-                feature_extractor = deepcopy(net.model).to(args.device)
-                m_type = 2
-            tsne_dir    = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.p_dir[2:])
-            tsne_file   = os.path.join(tsne_dir, 'tSNE {} {}2{} {} at Task {}.png'.format((args.approach).upper(), s, t, args.network, task))
-            
-            if not os.path.exists(tsne_file):
-                from utils import visualize
-                visualize(src_te[:(task+1)],tgt_te[:(task+1)],feature_extractor, (task+1),
-                            filename=tsne_file, colors=colors[:(task+1)],
-                            batch_size=args.batch,device=args.device, m_type=m_type)
 
         # Save
         print('Save at ' + os.path.join(r_dir, full_exp_name))

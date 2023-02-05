@@ -418,38 +418,17 @@ def visualize(source_datasets, target_datasets, net:nn.Module, total_task:int,
             source_feature = collect_dann_feature(train_source_loader, net, device).cpu()
             target_feature = collect_dann_feature(train_target_loader, net, device).cpu()
         
-        # features = np.concatenate([source_feature, target_feature], axis=0)
-        # X_tsne = TSNE(n_components=2, random_state=33, perplexity=10).fit_transform(features) # map features to 2-d using TSNE
-        # domains = np.concatenate((np.ones(len(source_feature)), np.zeros(len(target_feature)))) # domain labels, 1 represents source while 0 represents target
-        # plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=domains, cmap=col.ListedColormap([colors[task], lighten_color(colors[task])]), s=20)
-            
-        X_tsne1 = TSNE(n_components=2, random_state=33, perplexity=30, n_iter=1000).fit_transform(source_feature) # map features to 2-d using TSNE
-        X_tsne2 = TSNE(n_components=2, random_state=33, perplexity=30, n_iter=1000).fit_transform(target_feature) # map features to 2-d using TSNE
+        X_tsne1 = TSNE(n_components=2, random_state=33, perplexity=50, n_iter=1000).fit_transform(source_feature) # map features to 2-d using TSNE
+        X_tsne2 = TSNE(n_components=2, random_state=33, perplexity=50, n_iter=1000).fit_transform(target_feature) # map features to 2-d using TSNE
         plt.scatter(X_tsne1[:, 0], X_tsne1[:, 1], c = colors[task], 
-                    # label="Task {} from source domain".format(task)
+                    label="Source--Task {}".format(task)
                     )
-        plt.scatter(X_tsne2[:, 0], X_tsne2[:, 1], c = lighten_color(colors[task]), 
-                    # label="Task {} from target domain".format(task)
+        plt.scatter(X_tsne2[:, 0], X_tsne2[:, 1], c = lighten_color(colors[task]), alpha=0.5,
+                    label="Target--Task {}".format(task)
                     )
 
-        # # plot t-SNE
-        # from tsne_torch import TorchTSNE as TSNE
-        # S_emb = TSNE(n_components=2, perplexity=30, n_iter=1000, verbose=True).fit_transform(source_feature)  # returns shape (n_samples, 2)
-        # T_emb = TSNE(n_components=2, perplexity=30, n_iter=1000, verbose=True).fit_transform(target_feature)
-        # plt.scatter(S_emb[:, 0], 
-        #             S_emb[:, 1],
-        #             c = colors[task],
-        #             label="Task {} --Source".format(task)
-        #             )
-        # plt.scatter(T_emb[:, 0], 
-        #             T_emb[:, 1], 
-        #             c = lighten_color(colors[task]),
-        #             label="Task {} --Target".format(task)
-        #             )
-        # task_feat1.append(S_emb)
-        # task_feat2.append(T_emb)
-    plt.legend()
-    plt.savefig(filename)
+    plt.legend(loc="upper right")
+    plt.savefig(filename, dpi=360)
     print('tSNE plot saved.')
 
 
@@ -471,3 +450,36 @@ def lighten_color(color, amount=0.5):
         c = color
     c = colorsys.rgb_to_hls(*mc.to_rgb(c))
     return colorsys.hls_to_rgb(c[0], 1 - amount * (1 - c[1]), c[2])
+
+def plot_acc(accs, args, figname, y_label):
+    from matplotlib.ticker import FuncFormatter
+    iters_task = [len(sum(accs[i*(args.epoch):(i+1)*(args.epoch)],[])) for i in range(args.tasks)]
+
+    second_axis = [0]
+    [second_axis.append(sum(iters_task[:i+1])) for i in range(len(iters_task))]
+
+    def perc(x, pos):
+        return '{:.0f}%'.format(x*100)
+
+    fig, ax = plt.subplots(constrained_layout=True)
+    x = np.arange(len(sum(accs,[])))
+    y = sum(accs,[])
+
+    # set the formatter function for the y-axis
+    formatter = FuncFormatter(perc)
+
+    ax.plot(x, y)
+    ax.yaxis.set_major_formatter(formatter)
+    ax.set_xlim(0, len(sum(accs,[])))
+    ax.set_ylim(0, 1)
+    ax.set_xlabel('Iterations')
+    ax.set_ylabel(y_label)
+    # ax.set_title(title)
+
+    second_x = ['', 'Task 1', 'Task 2', 'Task 3', 'Task 4', 'Task 5']
+    ax2 = ax.twiny()
+    plt.grid(color = 'gainsboro', linestyle='--',linewidth = 1)
+    ax2.set_xticks(second_axis)
+    ax2.set_xticklabels([])
+    ax2.set_xticklabels(second_x)
+    plt.savefig(figname, dpi=600)
