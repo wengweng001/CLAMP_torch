@@ -50,12 +50,6 @@ class Appr(Continous_DA_Appr):
         # function switch
         self.der                = True
         self.distill            = True
-
-        self.acc_task1          = []
-        self.acc_task1_         = []
-        self.ave_acc            = []
-        self.ave_acc_           = []
-        self.analysis           = False
         
     @staticmethod
     def exemplars_dataset_class():
@@ -548,11 +542,6 @@ class Appr(Continous_DA_Appr):
         # print("Source dataloader batch no. {} \t Target dataloader batch no. {}\n\tIterations per epoch is {}"
         #         .format(len(trn_src_loader),len(trn_tgt_loader),iters_per_epoch))
 
-        if self.analysis:
-            acc = []
-            acc_ = []
-            mean_acc = []
-            mean_acc_ = []
         for i in range(iters_per_epoch):
             
             self.iter_counts += 1
@@ -680,32 +669,6 @@ class Appr(Continous_DA_Appr):
             
             self.logger.log_scalar(task=t, iter=i + 1, name="loss", value=loss.item(), group="train-epoch")
             # print('general loss:',loss.item())
-            
-            if self.analysis:
-                acc_task1 = evaluate.validate_one_task(
-                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[0]), verbose=False, test_size=None,
-                    allowed_classes=self.active_classes[-1] if type(self.active_classes[0])==list else self.active_classes
-                    )
-                acc_task1_ = evaluate.validate_one_task(
-                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[0]), verbose=False, test_size=None,
-                    )
-                acc.append(acc_task1.item())
-                acc_.append(acc_task1_.item())
-                a = evaluate.validate(
-                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[:t+1]), n_task=t+1, verbose=False, test_size=None,
-                    allowed_classes_list=[list(range(self.classes_per_task*(i+1))) for i in range(t+1)]  if isinstance(self.classes_per_task,int) \
-                        else [list(range(sum(self.classes_per_task[:i+1]))) for i in range(len(t+1))] )
-                b = evaluate.validate(
-                    copy.deepcopy(self.model), copy.deepcopy(val_tgt[:t+1]), n_task=t+1, verbose=False, test_size=None,
-                    )
-                mean_acc.append(np.mean(a))
-                mean_acc_.append(np.mean(b))
-        
-        if self.analysis:
-            self.acc_task1.append(acc)
-            self.acc_task1_.append(acc_)
-            self.ave_acc.append(mean_acc)
-            self.ave_acc_.append(mean_acc)
 
     def train_one_step_assessor(self, t, x, y, x_mem: None, y_mem: None, assessor, assessorOptimizer):
         # torch.cuda.empty_cache()

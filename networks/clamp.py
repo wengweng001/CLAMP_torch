@@ -749,7 +749,7 @@ class CLAMP(nn.Module):
         pool_layer = nn.Identity() if no_pool else None
         self.classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=bottleneck_dim,
                                         pool_layer=pool_layer, finetune=not scratch)
-        self.domain_adv = DomainClassifier(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim, batch_norm=False, sigmoid=False)
+        self.domain_adv = DomainClassifier(in_feature=self.classifier.features_dim, hidden_size=bottleneck_dim, sigmoid=False)
         
         if dataset_name == DatasetsType.mnist or dataset_name == DatasetsType.usps:
             self.assessorS = assessor(h_dim=self.classifier.features_dim)
