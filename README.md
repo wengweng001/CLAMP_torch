@@ -1,6 +1,5 @@
 # CLAMP PyTorch
-This is a PyTorch implementation of "Continual Learning across Many Processes".
-
+This is a PyTorch implementation of **[Cross-Domain Continual Learning via CLAMP](https://arxiv.org/abs/2405.07142)**.
 
 ## Requirements
 The current version of the code has been tested with the following configuration:
@@ -8,11 +7,16 @@ The current version of the code has been tested with the following configuration
 - pytorch 1.8.1
 - torchvision 0.9.1
 
-## Run
-### Experiments scripts
-- MNIST to USPS: `run_mnist2usps.sh`
-- USPS to MNIST: `run_usps2mnist.sh`
-- Office-31: `run_office.sh`
-- Office-Home: `run_home.sh`
+## Usage
+All experiments are launched via the command line by running `main.py` with the desired parameters.
 
-Experiments result in the paper can be viewed under `outputs` folder.
+**Example: MNIST to USPS**
+```bash
+python -u main.py --scenario class --source splitMNIST --target splitUSPS --tasks 5 --fc-units 256 --apporach clamp \
+  --batch 128 --batch-d 64 --lstm-units 256 --lstm-layers 2 --lr-bm 1e-3 --lr-a 1e-3 \
+  --pseudo --meta --domain --epoch 5 --epoch-inner 5 --epoch-outer 5 --epoch-d 10 --num-exemplars1 50 --num-exemplars2 50 \
+  --runs 5
+```
+
+## Results
+Experimental results and logs are saved in the `outputs/` directory.
