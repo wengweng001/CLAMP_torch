@@ -106,13 +106,13 @@ AVAILABLE_DATASETS = {
 AVAILABLE_TRANSFORMS = {
     'mnist': [
         transforms.ToTensor(),
-        # transforms.Lambda(lambda x: x.repeat(3,1,1)),
+        transforms.Lambda(lambda x: x.repeat(3,1,1)),
         transforms.Normalize(mean=(0.1307,), std=(0.3081,))
     ],
     'usps' : [
         transforms.Resize((28)),
         transforms.ToTensor(),
-        # transforms.Lambda(lambda x: x.repeat(3,1,1)),
+        transforms.Lambda(lambda x: x.repeat(3,1,1)),
         transforms.Normalize((0.5,), (0.5,))
     ],
 }
