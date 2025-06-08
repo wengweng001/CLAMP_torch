@@ -17,6 +17,3 @@ python -u main.py --scenario class --source splitMNIST --target splitUSPS --task
   --pseudo --meta --domain --epoch 5 --epoch-inner 5 --epoch-outer 5 --epoch-d 10 --num-exemplars1 50 --num-exemplars2 50 \
   --runs 5
 ```
-
-## Results
-Experimental results and logs are saved in the `outputs/` directory.
